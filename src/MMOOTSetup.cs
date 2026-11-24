@@ -5,7 +5,7 @@
 //
 // No game data is bundled and nothing is downloaded from anywhere but the project's own GitHub releases.
 //
-// Build: MMOOT/tools/make_installer.ps1  (uses the .NET Framework csc that ships with Windows)
+// Build: MMOOT/tools/make_installer.ps1  (self-contained Windows build; .NET 8 SDK required to compile)
 
 using System;
 using System.Collections.Generic;
@@ -39,10 +39,23 @@ namespace MmootSetup
         public const string RepoUrl = "https://github.com/" + RepoOwner + "/" + RepoName;
         public const string LatestReleaseApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/releases/latest";
         public const string TagsApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/tags";
-        public const string InstallerVersion = "16z64";
+        public const string InstallerVersion = "16z66";
 
         [STAThread]
         private static int Main(string[] args)
+        {
+            StartupDiagnostics.Write("Starting " + InstallerVersion + " | " + Environment.Version +
+                " | " + (Environment.Is64BitProcess ? "64-bit" : "32-bit"));
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs e)
+            { StartupDiagnostics.Report(e.Exception); };
+            AppDomain.CurrentDomain.UnhandledException += delegate(object sender, UnhandledExceptionEventArgs e)
+            { StartupDiagnostics.Write(Convert.ToString(e.ExceptionObject)); };
+            try { return Run(args); }
+            catch (Exception error) { StartupDiagnostics.Report(error); return 1; }
+        }
+
+        private static int Run(string[] args)
         {
             // Console modes, so the installer can be checked without clicking anything.
             //   MMOOTSetup.exe --validate mm|oot <rom path>
@@ -80,6 +93,16 @@ namespace MmootSetup
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            if (args.Length == 1 && args[0] == "--startup-check")
+            {
+                using (SetupForm form = new SetupForm())
+                {
+                    form.CreateControl();
+                    StartupDiagnostics.Write("STARTUP CHECK PASSED: setup window constructed without project files.");
+                }
+                return 0;
+            }
+            StartupDiagnostics.Write("Opening setup window");
             Application.Run(new SetupForm());
             return 0;
         }
@@ -97,6 +120,33 @@ namespace MmootSetup
             }
             catch { }
             return "";
+        }
+    }
+
+    internal static class StartupDiagnostics
+    {
+        public static string LogPath
+        {
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "MMOOTSetup", "startup.log"); }
+        }
+        public static void Write(string message)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(LogPath));
+                File.AppendAllText(LogPath, DateTime.Now.ToString("s", CultureInfo.InvariantCulture) + " " +
+                    message + Environment.NewLine);
+            }
+            catch { }
+        }
+        public static void Report(Exception error)
+        {
+            Write(error.ToString());
+            try { MessageBox.Show("MMOOT setup could not continue.\n\n" + error.Message +
+                "\n\nDetails were written to:\n" + LogPath,
+                "MMOOT setup", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch { }
         }
     }
 
@@ -512,6 +562,19 @@ namespace MmootSetup
         }
 
         // The freshly linked executable becomes the play binary the launchers start.
+        private static void CopyRuntimeFiles(string fromDir, string toDir, Action<string> append)
+        {
+            foreach (string required in new string[] { "SDL2.dll", "dxcompiler.dll", "dxil.dll" })
+                if (!File.Exists(Path.Combine(fromDir, required)))
+                    throw new FileNotFoundException("The game package is incomplete: " + required + " is missing.", required);
+            if (string.Equals(Path.GetFullPath(fromDir), Path.GetFullPath(toDir), StringComparison.OrdinalIgnoreCase)) return;
+            foreach (string dll in Directory.GetFiles(fromDir, "*.dll"))
+            {
+                File.Copy(dll, Path.Combine(toDir, Path.GetFileName(dll)), true);
+                append("installed runtime " + Path.GetFileName(dll));
+            }
+        }
+
         public static bool InstallExecutable(string source, Action<string> append)
         {
             string dir = BuildNinja(source);
@@ -520,6 +583,7 @@ namespace MmootSetup
             if (!File.Exists(built)) { append("no freshly built executable at " + built); return false; }
             try
             {
+                CopyRuntimeFiles(dir, dir, append);
                 if (File.Exists(play))
                 {
                     string backup = play + ".pre_setup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".bak";
@@ -535,6 +599,7 @@ namespace MmootSetup
                 if (File.Exists(sibling) && !string.Equals(sibling, play, StringComparison.OrdinalIgnoreCase))
                 {
                     File.Copy(built, sibling, true);
+                    CopyRuntimeFiles(dir, Path.GetDirectoryName(sibling), append);
                     append("mirrored to " + sibling);
                 }
                 return true;
@@ -727,7 +792,7 @@ namespace MmootSetup
             y += 20;
             sourceDir.SetBounds(16, y, 590, 24);
             string detectedSource = Builder.DetectSource();
-            sourceDir.Text = detectedSource.Length != 0 ? detectedSource : @"C:\Twilight Wind Mask of Time";
+            sourceDir.Text = detectedSource;
             body.Controls.Add(sourceDir);
             Button browseSource = new Button();
             browseSource.Text = "Browse...";
@@ -790,7 +855,8 @@ namespace MmootSetup
             openRelease.Click += delegate
             {
                 string href = lastUpdateHref ?? Program.RepoUrl;
-                try { Process.Start(href); } catch (Exception error) { Append("cannot open browser: " + error.Message); }
+                try { Process.Start(new ProcessStartInfo(href) { UseShellExecute = true }); }
+                catch (Exception error) { Append("cannot open browser: " + error.Message); }
             };
             body.Controls.Add(openRelease);
             y += 42;

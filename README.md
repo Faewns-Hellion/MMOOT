@@ -9,9 +9,11 @@ project tree on your machine — nothing Nintendo ships here.
 
 ## The launcher
 
-Download **[MMOOTSetup.exe](MMOOTSetup.exe)** and run it. It is a single plain Windows program: no
-installer framework, no registry, no runtime to install beyond the .NET Framework 4 that already
-ships with Windows.
+Download **[MMOOTSetup.exe](https://github.com/Faewns-Hellion/MMOOT/raw/refs/heads/main/MMOOTSetup.exe)** and run it on **64-bit Windows 10 or Windows 11**. Use the download link, rather than saving the GitHub file-preview page as an EXE.
+
+The portable launcher includes its .NET runtime. Copy the single EXE to the other PC; a separate .NET installation and the developer's original folder layout are not required to open it. This launcher is distinct from the game executable, which needs its runtime DLLs and assets alongside it.
+
+If startup fails, the launcher displays the error and writes `%LOCALAPPDATA%\MMOOTSetup\startup.log`. Windows errors before managed startup (for example a blocked or incomplete download) cannot appear in that log. `MMOOTSetup.exe --startup-check` constructs the window and exits without installing ROMs, starting a build, or checking the network.
 
 **Build and configure** is the main button. It:
 
@@ -53,8 +55,7 @@ launcher log instead of failing deep inside ninja.
     powershell -NoProfile -File src/make_installer.ps1
     powershell -NoProfile -File src/make_installer.ps1 -Console
 
-Both use the .NET Framework 4 `csc.exe` that ships with Windows and write the executable to
-`build/installer/`. Copy it here as `MMOOTSetup.exe` to publish.
+The default build uses the .NET 8 SDK and publishes a self-contained single EXE to `build/installer/`. `-Runtime win-arm64` and `-Runtime win-x86` build those architectures. `-Framework` explicitly selects the legacy .NET Framework compiler; that smaller EXE requires .NET Framework on the destination PC. Copy the tested portable output here as `MMOOTSetup.exe` to publish.
 
 ## Legal
 

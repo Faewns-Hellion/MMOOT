@@ -1,7 +1,8 @@
 # MMOOT installer
 
-`MMOOTSetup.exe` is a plain Windows program (no installer framework, no registry, no dependencies beyond the
-.NET Framework 4 that ships with Windows). Source: `MMOOTSetup.cs`.
+`MMOOTSetup.exe` is a self-contained Windows launcher. The default build targets 64-bit Windows 10/11 and includes its .NET runtime, so it can open without a separate .NET installation. Source: `MMOOTSetup.cs`; portable project: `MMOOTSetup.csproj`.
+
+Build the portable launcher with `powershell -NoProfile -File src/make_installer.ps1`. It needs the .NET 8 SDK on the build machine, but not on the destination PC. `-Runtime win-arm64` / `-Runtime win-x86` select other Windows architectures; `-Framework` produces the legacy runtime-dependent EXE explicitly. Startup failures write `%LOCALAPPDATA%\MMOOTSetup\startup.log`; `--startup-check` checks window construction without installing anything or accessing GitHub.
 
 ## What it does
 
@@ -38,13 +39,12 @@ Nothing from the ROMs is bundled and the installer downloads nothing except, on 
     MMOOTSetup.exe --check-build "C:\Twilight Wind Mask of Time"     # prerequisites only
     MMOOTSetup.exe --build "C:\Twilight Wind Mask of Time" mm.z64 oot.z64   # recompile + install (the main button)
 
-The console build (`-Console`) prints those results; the window build (`MMOOTSetup.exe`) ignores them and always
-opens the window.
+The console build (`-Console`) prints results to its terminal. Both builds accept the command-line modes; running the window build without arguments opens the setup window.
 
 ## Building
 
-    powershell -NoProfile -File MMOOT/tools/make_installer.ps1            # build/installer/MMOOTSetup.exe
-    powershell -NoProfile -File MMOOT/tools/make_installer.ps1 -Console   # .../MMOOTSetup-console.exe
+    powershell -NoProfile -File src/make_installer.ps1            # build/installer/MMOOTSetup.exe
+    powershell -NoProfile -File src/make_installer.ps1 -Console   # .../MMOOTSetup-console.exe
 
 ## What it does not do
 
