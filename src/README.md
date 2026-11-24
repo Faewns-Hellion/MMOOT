@@ -30,11 +30,18 @@ Build the portable launcher with `powershell -NoProfile -File src/make_installer
 
 Nothing from the ROMs is bundled and the installer downloads nothing except, on request, the project's own release.
 
+5. **Crash reports, optional and retroactive.** `Report a crash... (optional, no data collection)` reads what earlier runs
+   left behind - `pc\logs\play_hyrule.log`, `pc\logs\old`, `crash_*.dmp`, the launcher startup log - writes the report to
+   `%LOCALAPPDATA%\MMOOTSetupeports` and shows every line of it before anything else happens. Nothing is recorded while you
+   play and nothing is uploaded; `Yes - open a GitHub issue...` opens a prefilled draft you still submit yourself, and
+   `No thanks - close` sends nothing.
+
 ## Command line (for checking without clicking)
 
     MMOOTSetup.exe --validate mm  path\to\mm.z64
     MMOOTSetup.exe --validate oot path\to\oot.z64
     MMOOTSetup.exe --check-updates
+    MMOOTSetup.exe --report-check [folder]      # write the crash report, open nothing
     MMOOTSetup.exe --install mm.z64 oot.z64 D:\MMOOT
     MMOOTSetup.exe --check-build "C:\Twilight Wind Mask of Time"     # prerequisites only
     MMOOTSetup.exe --build "C:\Twilight Wind Mask of Time" mm.z64 oot.z64   # recompile + install (the main button)

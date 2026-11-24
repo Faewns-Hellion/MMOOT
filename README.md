@@ -16,6 +16,12 @@ The portable launcher includes its .NET runtime. Copy the single EXE to the othe
 
 If startup fails, the launcher displays the error and writes `%LOCALAPPDATA%\MMOOTSetup\startup.log`. Windows errors before managed startup (for example a blocked or incomplete download) cannot appear in that log. `MMOOTSetup.exe --startup-check` constructs the window and exits without installing ROMs, starting a build, or checking the network.
 
+**Report a crash... (optional, no data collection)** handles crashes that already happened. It reads only files that are
+already on the PC - `pc\logs\play_hyrule.log`, the runs kept in `pc\logs\old`, any `crash_*.dmp`, and the launcher's own
+startup log - writes them to `%LOCALAPPDATA%\MMOOTSetupeports\MMOOT-report-<date>.txt`, and shows the whole report for
+review. It is not telemetry: nothing is recorded while you play and nothing is uploaded. Only **Yes - open a GitHub issue...**
+leaves the PC, into a draft issue in your browser that still has to be submitted by hand; **No thanks - close** sends nothing.
+
 **Build and configure** is the main button. It:
 
 1. Asks for your own **Majora's Mask (US)** and **Ocarina of Time (US)** ROMs and checks both before
@@ -36,6 +42,7 @@ compiled against.
 ### Command line (for checking without clicking)
 
     MMOOTSetup.exe --check-updates
+    MMOOTSetup.exe --report-check [folder]   # write a crash report, open nothing
     MMOOTSetup.exe --validate mm  path\to\mm.z64
     MMOOTSetup.exe --validate oot path\to\oot.z64
     MMOOTSetup.exe --install mm.z64 oot.z64 D:\MMOOT
