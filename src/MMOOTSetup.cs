@@ -39,7 +39,8 @@ namespace MmootSetup
         public const string RepoUrl = "https://github.com/" + RepoOwner + "/" + RepoName;
         public const string LatestReleaseApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/releases/latest";
         public const string TagsApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/tags";
-        public const string InstallerVersion = "16z66";
+        public const string IssuesUrl = RepoUrl + "/issues/new";
+        public const string InstallerVersion = "16z67";
 
         [STAThread]
         private static int Main(string[] args)
@@ -89,6 +90,18 @@ namespace MmootSetup
                 UpdateInfo info = GithubCheck.Latest();
                 Console.WriteLine(info.Describe(InstalledVersion()));
                 return info.Ok ? 0 : 1;
+            }
+
+            // Builds a crash report exactly as the button would, writes it, and prints the draft issue URL length.
+            // It opens no browser: the report is only handed over when the player chooses to.
+            if (args.Length >= 1 && args[0] == "--report-check")
+            {
+                string sample = BugReport.Collect(Program.DefaultInstallDir, Builder.DetectSource(), "");
+                string written = BugReport.Save(sample, args.Length > 1 ? args[1] : null);
+                string issue = BugReport.IssueUrl(sample);
+                Console.WriteLine("crash report written: " + written + " (" + sample.Length + " chars)");
+                Console.WriteLine("github issue draft url: " + issue.Length + " chars; nothing opened, nothing sent");
+                return 0;
             }
 
             Application.EnableVisualStyles();
@@ -147,6 +160,306 @@ namespace MmootSetup
                 "\n\nDetails were written to:\n" + LogPath,
                 "MMOOT setup", MessageBoxButtons.OK, MessageBoxIcon.Error); }
             catch { }
+        }
+    }
+
+    // Crash reports are retroactive and strictly opt-in. Nothing is captured while the game runs and nothing is
+    // uploaded: this only reads the logs and crash dumps that already sit on the PC when the player presses the
+    // button, writes the report into the player's own folder, and shows it for review. The one action that can leave
+    // the machine is opening a GitHub issue draft, which the player still has to submit themselves.
+    internal static class BugReport
+    {
+        public const string PrivacyNote =
+            "Not data collection. Nothing is recorded while you play, nothing is uploaded, and no account is used. " +
+            "This only reads the crash logs and dumps already on this PC, shows them to you, and saves the report in " +
+            "your own folder. It is here so a crash can be fixed - close this window and nothing leaves your PC.";
+
+        public static string ReportsFolder
+        {
+            get
+            {
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "MMOOTSetup", "reports");
+            }
+        }
+
+        public static string Collect(string installDir, string sourceDir, string windowLog)
+        {
+            StringBuilder text = new StringBuilder();
+            text.AppendLine("MMOOT crash report");
+            text.AppendLine("Written " + DateTime.Now.ToString("u", CultureInfo.InvariantCulture) +
+                " on this PC. Nothing here was sent anywhere.");
+            text.AppendLine();
+            text.AppendLine("Launcher    : MMOOTSetup " + Program.InstallerVersion +
+                " (" + (Environment.Is64BitProcess ? "64-bit" : "32-bit") + ")");
+            text.AppendLine("Runtime     : .NET " + Environment.Version);
+            text.AppendLine("Windows     : " + Environment.OSVersion.VersionString);
+            string installed = Program.InstalledVersion();
+            text.AppendLine("Installed   : " + (installed.Length == 0 ? "(no mmoot_version.txt)" : installed));
+            text.AppendLine("Game folder : " + (string.IsNullOrEmpty(installDir) ? "(not set)" : installDir));
+            text.AppendLine("Source      : " + (string.IsNullOrEmpty(sourceDir) ? "(not set)" : sourceDir));
+
+            // A crash already left its files behind, so look where the play scripts put them: pc\logs next to the
+            // executable, or under the source tree if the game was not installed here.
+            List<string> candidates = new List<string>();
+            if (!string.IsNullOrEmpty(installDir)) candidates.Add(Path.Combine(installDir, "pc", "logs"));
+            if (!string.IsNullOrEmpty(sourceDir))
+            {
+                candidates.Add(Path.Combine(sourceDir, "pc", "logs"));
+                candidates.Add(Path.Combine(sourceDir, "MMOOT", "pc", "logs"));
+            }
+            string logDir = null;
+            foreach (string candidate in candidates)
+                if (Directory.Exists(candidate)) { logDir = candidate; break; }
+
+            AppendSection(text, "Crash dumps left by earlier runs", CrashDumps(logDir));
+            AppendSection(text, "Last run (pc\\logs\\play_hyrule.log, tail)",
+                ReadTail(logDir == null ? null : Path.Combine(logDir, "play_hyrule.log"), 200));
+            AppendSection(text, "Previous runs kept in pc\\logs\\old", OldRuns(logDir));
+            AppendSection(text, "Launcher startup log (tail)",
+                ReadTail(StartupDiagnostics.LogPath, 60));
+            AppendSection(text, "This launcher window's own log", Tail(windowLog, 40));
+            return text.ToString();
+        }
+
+        public static string Save(string text, string folder)
+        {
+            string dir = string.IsNullOrEmpty(folder) ? ReportsFolder : folder;
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, "MMOOT-report-" +
+                DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".txt");
+            File.WriteAllText(path, text);
+            return path;
+        }
+
+        // The report is too long for a URL, so the issue draft carries the head of it and asks for the saved file.
+        public static string IssueUrl(string report)
+        {
+            const int bodyLimit = 1800;
+            string head = report.Length <= bodyLimit ? report : report.Substring(0, bodyLimit);
+            string body = "What happened:\n\n\nWhat you expected:\n\n\n" + head;
+            if (report.Length > bodyLimit)
+                body += "\n\n[The rest of the report is in the MMOOT-report-<date>.txt file this button saved - " +
+                        "please attach it.]";
+            string title = "Crash report: MMOOT " + Program.InstallerVersion;
+            return Program.IssuesUrl + "?title=" + Uri.EscapeDataString(title) +
+                "&body=" + Uri.EscapeDataString(body);
+        }
+
+        private static void AppendSection(StringBuilder text, string title, string content)
+        {
+            text.AppendLine();
+            text.AppendLine("---- " + title + " ----");
+            text.AppendLine(string.IsNullOrEmpty(content) ? "(nothing found)" : content.TrimEnd());
+        }
+
+        private static string CrashDumps(string logDir)
+        {
+            if (logDir == null || !Directory.Exists(logDir)) return "(no pc\\logs folder found)";
+            string[] dumps;
+            try { dumps = Directory.GetFiles(logDir, "crash_*.dmp"); }
+            catch { return "(could not list crash dumps)"; }
+            if (dumps.Length == 0) return "(no crash_*.dmp files)";
+            Array.Sort(dumps, delegate(string a, string b)
+            { return File.GetLastWriteTime(b).CompareTo(File.GetLastWriteTime(a)); });
+            StringBuilder text = new StringBuilder();
+            for (int i = 0; i < dumps.Length && i < 5; i++)
+            {
+                try
+                {
+                    FileInfo info = new FileInfo(dumps[i]);
+                    text.AppendLine(Path.GetFileName(dumps[i]) + "  " + info.Length.ToString("N0") + " bytes  " +
+                        info.LastWriteTime.ToString("u", CultureInfo.InvariantCulture));
+                }
+                catch { }
+            }
+            if (dumps.Length > 5) text.AppendLine("(" + (dumps.Length - 5) + " older dumps not listed)");
+            return text.ToString();
+        }
+
+        private static string OldRuns(string logDir)
+        {
+            if (logDir == null) return "(no pc\\logs folder found)";
+            string old = Path.Combine(logDir, "old");
+            if (!Directory.Exists(old)) return "(no logs\\old folder)";
+            string[] runs;
+            try { runs = Directory.GetFiles(old, "play_hyrule_*.log"); }
+            catch { return "(could not list previous runs)"; }
+            if (runs.Length == 0) return "(no previous runs kept)";
+            Array.Sort(runs, delegate(string a, string b)
+            { return File.GetLastWriteTime(b).CompareTo(File.GetLastWriteTime(a)); });
+            StringBuilder text = new StringBuilder();
+            for (int i = 0; i < runs.Length && i < 5; i++)
+            {
+                try
+                {
+                    FileInfo info = new FileInfo(runs[i]);
+                    text.AppendLine(Path.GetFileName(runs[i]) + "  " + info.Length.ToString("N0") + " bytes  " +
+                        info.LastWriteTime.ToString("u", CultureInfo.InvariantCulture));
+                }
+                catch { }
+            }
+            return text.ToString();
+        }
+
+        private static string ReadTail(string path, int lines)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return "(not found: " + (path ?? "path unknown") + ")";
+            try
+            {
+                string[] all = File.ReadAllLines(path);
+                int start = all.Length > lines ? all.Length - lines : 0;
+                StringBuilder text = new StringBuilder();
+                for (int i = start; i < all.Length; i++) text.AppendLine(all[i]);
+                if (start > 0) text.Insert(0, "(" + start + " earlier lines not shown)\n");
+                return text.ToString();
+            }
+            catch (Exception error) { return "(could not read " + path + ": " + error.Message + ")"; }
+        }
+
+        private static string Tail(string text, int lines)
+        {
+            if (string.IsNullOrEmpty(text)) return "(the window log is empty)";
+            string[] all = text.Replace("\r\n", "\n").Split('\n');
+            int start = all.Length > lines ? all.Length - lines : 0;
+            return string.Join("\n", all, start, all.Length - start);
+        }
+    }
+
+    // The review window. It sends nothing by itself: the report sits in a read-only box, and only the GitHub button
+    // can leave the PC - into a browser page where the player still has to press Submit.
+    internal sealed class ReportForm : Form
+    {
+        private readonly string report;
+        private readonly Label hint = new Label();
+        private string savedPath;
+        public bool OpenedIssue;
+
+        public ReportForm(string report)
+        {
+            this.report = report;
+            Text = "Report a crash - nothing sent yet";
+            Width = 840;
+            Height = 640;
+            MinimumSize = new Size(700, 540);
+            StartPosition = FormStartPosition.CenterParent;
+            Font = new Font("Segoe UI", 9f);
+            BackColor = Color.FromArgb(24, 22, 30);
+            ForeColor = Color.Gainsboro;
+
+            Label privacy = new Label();
+            privacy.Text = BugReport.PrivacyNote;
+            privacy.SetBounds(16, 12, 790, 56);
+            privacy.ForeColor = Color.FromArgb(214, 170, 255);
+            privacy.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            Controls.Add(privacy);
+
+            Label caption = new Label();
+            caption.Text = "This is the whole report - it was just assembled from the files already on this PC:";
+            caption.SetBounds(16, 74, 790, 18);
+            Controls.Add(caption);
+
+            TextBox preview = new TextBox();
+            preview.SetBounds(16, 96, 790, 420);
+            preview.Multiline = true;
+            preview.ReadOnly = true;
+            preview.ScrollBars = ScrollBars.Both;
+            preview.WordWrap = false;
+            preview.Text = report;
+            preview.BackColor = Color.FromArgb(18, 16, 22);
+            preview.ForeColor = Color.Gainsboro;
+            preview.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            Controls.Add(preview);
+
+            hint.SetBounds(16, 522, 790, 34);
+            hint.ForeColor = Color.Gray;
+            hint.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            hint.Text = "Nothing is sent from this window. \"Open GitHub issue\" only opens a draft in your browser; " +
+                        "the report is posted only if you press Submit there.";
+            Controls.Add(hint);
+
+            Button github = new Button();
+            github.Text = "Yes - open a GitHub issue...";
+            github.SetBounds(16, 560, 230, 30);
+            github.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            github.Click += delegate { OpenGithub(); };
+            Controls.Add(github);
+
+            Button save = new Button();
+            save.Text = "Save report...";
+            save.SetBounds(254, 560, 130, 30);
+            save.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            save.Click += delegate { SaveAs(); };
+            Controls.Add(save);
+
+            Button copy = new Button();
+            copy.Text = "Copy";
+            copy.SetBounds(392, 560, 90, 30);
+            copy.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            copy.Click += delegate
+            {
+                try { Clipboard.SetText(report); hint.Text = "Report copied to the clipboard."; }
+                catch (Exception error) { hint.Text = "Could not copy: " + error.Message; }
+            };
+            Controls.Add(copy);
+
+            Button close = new Button();
+            close.Text = "No thanks - close";
+            close.SetBounds(660, 560, 146, 30);
+            close.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
+            close.DialogResult = DialogResult.Cancel;
+            Controls.Add(close);
+            CancelButton = close;
+        }
+
+        private string EnsureSaved()
+        {
+            if (savedPath != null) return savedPath;
+            try { savedPath = BugReport.Save(report, null); }
+            catch (Exception error) { hint.Text = "Could not save the report: " + error.Message; }
+            return savedPath;
+        }
+
+        private void OpenGithub()
+        {
+            string path = EnsureSaved();
+            try
+            {
+                Process.Start(new ProcessStartInfo(BugReport.IssueUrl(report)) { UseShellExecute = true });
+                OpenedIssue = true;
+                MessageBox.Show(this,
+                    "Your browser is opening a draft issue. Nothing has been posted yet - press Submit there to send it." +
+                    (path != null ? "\n\nThe full report is saved at:\n" + path +
+                        "\nAttach that file to the issue so the whole log travels with it." : ""),
+                    "Nothing sent yet", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception error)
+            {
+                MessageBox.Show(this, "Could not open the browser: " + error.Message +
+                    (path != null ? "\n\nThe report is saved at:\n" + path : ""),
+                    "Nothing sent", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            DialogResult = DialogResult.OK;
+            Close();
+        }
+
+        private void SaveAs()
+        {
+            string suggested = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                "MMOOT-report-" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".txt");
+            using (SaveFileDialog dialog = new SaveFileDialog())
+            {
+                dialog.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*";
+                dialog.FileName = suggested;
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                try
+                {
+                    File.WriteAllText(dialog.FileName, report);
+                    savedPath = dialog.FileName;
+                    hint.Text = "Report saved to " + dialog.FileName + " - still nothing sent.";
+                }
+                catch (Exception error) { hint.Text = "Could not save: " + error.Message; }
+            }
         }
     }
 
@@ -755,8 +1068,8 @@ namespace MmootSetup
         {
             Text = "LoZ: Masks of Time - setup";
             Width = 760;
-            Height = 560;
-            MinimumSize = new Size(680, 520);
+            Height = 620;
+            MinimumSize = new Size(680, 580);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9f);
             BackColor = Color.FromArgb(24, 22, 30);
@@ -865,6 +1178,21 @@ namespace MmootSetup
             updateStatus.Text = "";
             body.Controls.Add(updateStatus);
             y += 50;
+
+            Label reportNote = new Label();
+            reportNote.Text = "Optional crash report - not data collection: nothing is recorded while you play, and nothing " +
+                              "is sent unless you send it.";
+            reportNote.ForeColor = Color.Gray;
+            reportNote.SetBounds(16, y, 700, 18);
+            body.Controls.Add(reportNote);
+            y += 20;
+
+            Button reportButton = new Button();
+            reportButton.Text = "Report a crash... (optional, no data collection)";
+            reportButton.SetBounds(16, y, 330, 28);
+            reportButton.Click += delegate { ShowReportDialog(); };
+            body.Controls.Add(reportButton);
+            y += 34;
 
             log.SetBounds(16, y, 700, 150);
             log.Multiline = true;
@@ -1063,6 +1391,26 @@ namespace MmootSetup
                 updateStatus.Text += Environment.NewLine + "Release file: " + info.AssetName;
             if (manual) Append(info.Describe(installed));
             updateButton.Enabled = true;
+        }
+
+        // Retroactive by design: the crash already happened, so the report is built from the logs and dumps left behind.
+        // Nothing is sent here - the dialog only offers to open a draft issue the player submits themselves.
+        private void ShowReportDialog()
+        {
+            string report;
+            try { report = BugReport.Collect(installDir.Text.Trim(), sourceDir.Text.Trim(), log.Text); }
+            catch (Exception error)
+            {
+                Append("Could not assemble a crash report: " + error.Message);
+                return;
+            }
+            using (ReportForm dialog = new ReportForm(report))
+            {
+                dialog.ShowDialog(this);
+                Append(dialog.OpenedIssue
+                    ? "Crash report: opened a GitHub issue draft in the browser; nothing is posted until you submit it there."
+                    : "Crash report: closed, nothing was sent.");
+            }
         }
 
         private void Append(string line)
