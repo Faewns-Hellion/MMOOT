@@ -1,0 +1,6 @@
+# Build output and local tooling
+build/
+*.log
+*.bak
+*.obj
+.vs/
