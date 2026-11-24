@@ -4,3 +4,6 @@ build/
 *.bak
 *.obj
 .vs/
+# The launcher is published as a GitHub release asset, not tracked here
+MMOOTSetup.exe
+MMOOTSetup-console.exe
