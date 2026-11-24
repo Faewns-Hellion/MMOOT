@@ -248,59 +248,68 @@ namespace MmootSetup
         public static UpdateInfo Latest()
         {
             UpdateInfo info = new UpdateInfo();
+            string releaseJson = null;
+            string releaseError = null;
+
+            // A repository with no published release answers 404 here. That is not a failure: the tags below still
+            // tell the user whether their install is behind.
+            try { releaseJson = Get(Program.LatestReleaseApi); }
+            catch (Exception error) { releaseError = Friendly(error); }
+
+            if (releaseJson != null)
+            {
+                Match tag = Regex.Match(releaseJson, "\"tag_name\"\\s*:\\s*\"([^\"]*)\"");
+                if (tag.Success)
+                {
+                    info.Ok = true;
+                    info.Tag = tag.Groups[1].Value;
+                    Match url = Regex.Match(releaseJson, "\"html_url\"\\s*:\\s*\"([^\"]*)\"");
+                    info.Url = url.Success ? url.Groups[1].Value : Program.RepoUrl;
+
+                    // First downloadable asset (a Windows zip is what the release should carry).
+                    MatchCollection assets = Regex.Matches(releaseJson,
+                        "\"browser_download_url\"\\s*:\\s*\"([^\"]*)\"", RegexOptions.None);
+                    foreach (Match asset in assets)
+                    {
+                        string href = asset.Groups[1].Value;
+                        if (href.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
+                            href.EndsWith(".7z", StringComparison.OrdinalIgnoreCase))
+                        {
+                            info.AssetUrl = href;
+                            info.AssetName = href.Substring(href.LastIndexOf('/') + 1);
+                            break;
+                        }
+                    }
+                    if (info.AssetUrl == null && assets.Count != 0)
+                    {
+                        string href = assets[0].Groups[1].Value;
+                        info.AssetUrl = href;
+                        info.AssetName = href.Substring(href.LastIndexOf('/') + 1);
+                    }
+                    return info;
+                }
+            }
+
+            // No published release yet: fall back to the newest tag, which still tells the user whether their clone
+            // is behind.
             try
             {
-                string json = Get(Program.LatestReleaseApi);
-                Match tag = Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]*)\"");
-                if (!tag.Success)
+                string tags = Get(Program.TagsApi);
+                Match name = Regex.Match(tags, "\"name\"\\s*:\\s*\"([^\"]*)\"");
+                if (name.Success)
                 {
-                    // No published release yet: fall back to the newest tag, which still tells the user whether their
-                    // clone is behind.
-                    string tags = Get(Program.TagsApi);
-                    Match name = Regex.Match(tags, "\"name\"\\s*:\\s*\"([^\"]*)\"");
-                    if (!name.Success)
-                    {
-                        info.Error = "no release or tag found in " + Program.RepoUrl;
-                        return info;
-                    }
                     info.Ok = true;
                     info.Tag = name.Groups[1].Value;
                     info.Url = Program.RepoUrl;
                     return info;
                 }
-
-                info.Ok = true;
-                info.Tag = tag.Groups[1].Value;
-                Match url = Regex.Match(json, "\"html_url\"\\s*:\\s*\"([^\"]*)\"");
-                info.Url = url.Success ? url.Groups[1].Value : Program.RepoUrl;
-
-                // First downloadable asset (a Windows zip is what the release should carry).
-                MatchCollection assets = Regex.Matches(json,
-                    "\"browser_download_url\"\\s*:\\s*\"([^\"]*)\"", RegexOptions.None);
-                foreach (Match asset in assets)
-                {
-                    string href = asset.Groups[1].Value;
-                    if (href.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
-                        href.EndsWith(".7z", StringComparison.OrdinalIgnoreCase))
-                    {
-                        info.AssetUrl = href;
-                        info.AssetName = href.Substring(href.LastIndexOf('/') + 1);
-                        break;
-                    }
-                }
-                if (info.AssetUrl == null && assets.Count != 0)
-                {
-                    string href = assets[0].Groups[1].Value;
-                    info.AssetUrl = href;
-                    info.AssetName = href.Substring(href.LastIndexOf('/') + 1);
-                }
-                return info;
+                info.Error = releaseError ?? ("no release or tag found in " + Program.RepoUrl);
             }
             catch (Exception error)
             {
-                info.Error = Friendly(error);
-                return info;
+                info.Error = releaseError ?? Friendly(error);
             }
+            return info;
         }
 
         private static string Get(string url)
