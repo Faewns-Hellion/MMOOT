@@ -5,8 +5,10 @@ dialogue running on MM's renderer, inventory, timer and save system. Majora's Ma
 and absorbing Hyrule.
 
 This repository carries the MMOOT setup launcher's source; the launcher itself is published on the
-[Releases page](https://github.com/Faewns-Hellion/MMOOT/releases). The game itself is built from the
-project tree on your machine — nothing Nintendo ships here.
+[Releases page](https://github.com/Faewns-Hellion/MMOOT/releases). Each release also carries a packed
+`MMOOT-game-<round>.zip` for the launcher's **Fuse** button: the compiled game and its Hyrule content
+image, built from the project tree on the machine that compiles it, with your own ROMs still required.
+That package is only useful with the launcher from the same release.
 
 ## The launcher
 
