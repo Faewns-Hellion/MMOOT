@@ -14,6 +14,7 @@ using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.IO.Compression;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -40,7 +41,7 @@ namespace MmootSetup
         public const string LatestReleaseApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/releases/latest";
         public const string TagsApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/tags";
         public const string IssuesUrl = RepoUrl + "/issues/new";
-        public const string InstallerVersion = "16z68";
+        public const string InstallerVersion = "16z69";
 
         [STAThread]
         private static int Main(string[] args)
@@ -92,8 +93,17 @@ namespace MmootSetup
                 return info.Ok ? 0 : 1;
             }
 
+            // Packs a built game into one file the other PC can select:
+            //   MMOOTSetup.exe --pack <build folder> <output zip> [content image]
+            if (args.Length >= 3 && args[0] == "--pack")
+            {
+                string packed = GamePackage.Pack(args[1], args.Length >= 4 ? args[3] : null, args[2], Console.WriteLine);
+                Console.WriteLine(packed != null ? "PACK OK " + packed : "PACK FAILED");
+                return packed != null ? 0 : 1;
+            }
+
             // Installs a game that was built on another PC, for checking without clicking:
-            //   MMOOTSetup.exe --fuse <game folder> <mm rom> <oot rom> [install folder]
+            //   MMOOTSetup.exe --fuse <game folder or .zip> <mm rom> <oot rom> [install folder]
             if (args.Length >= 4 && args[0] == "--fuse")
             {
                 string target = args.Length >= 5 ? args[4] : Program.DefaultInstallDir;
@@ -989,21 +999,34 @@ namespace MmootSetup
     // files come from the player's own build folder.
     internal static class GamePackage
     {
-        public static bool Install(string fromDir, string gameFolder, Action<string> append)
+        public static bool Install(string source, string gameFolder, Action<string> append)
         {
+            string unpacked = null;
             try
             {
+                string fromDir = source;
+                if (!string.IsNullOrEmpty(source) && File.Exists(source) &&
+                    source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    unpacked = Path.Combine(Path.GetTempPath(), "MMOOT-game-" +
+                        DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture));
+                    Directory.CreateDirectory(unpacked);
+                    ZipFile.ExtractToDirectory(source, unpacked);
+                    append("unpacked " + Path.GetFileName(source) + " (" +
+                           new FileInfo(source).Length.ToString("N0") + " bytes)");
+                    fromDir = SingleRoot(unpacked);
+                }
                 if (string.IsNullOrEmpty(fromDir) || !Directory.Exists(fromDir))
                 {
-                    append("Fuse needs the game folder built on the other PC (pick it above), or use Build and configure here.");
+                    append("Fuse needs the game package (.zip) from the PC that built the game (pick it above), or use Build and configure here.");
                     return false;
                 }
                 string exe = Path.Combine(fromDir, "Zelda64Recompiled-ootplay.exe");
                 if (!File.Exists(exe)) exe = Path.Combine(fromDir, "Zelda64Recompiled.exe");
                 if (!File.Exists(exe))
                 {
-                    append("No Zelda64Recompiled-ootplay.exe in " + fromDir + " - point Fuse at the build-ninja folder of the " +
-                           "PC that compiled the game.");
+                    append("No Zelda64Recompiled-ootplay.exe in " + fromDir + " - pick the .zip packed on the PC that built " +
+                           "the game, or its build-ninja folder.");
                     return false;
                 }
                 if (string.IsNullOrEmpty(gameFolder))
@@ -1027,9 +1050,9 @@ namespace MmootSetup
 
                 foreach (string folder in new string[] { "assets", "shaders", "mods" })
                 {
-                    string source = Path.Combine(fromDir, folder);
-                    if (!Directory.Exists(source)) continue;
-                    CopyTree(source, Path.Combine(gameFolder, folder));
+                    string sourceDir = Path.Combine(fromDir, folder);
+                    if (!Directory.Exists(sourceDir)) continue;
+                    CopyTree(sourceDir, Path.Combine(gameFolder, folder));
                     append("copied " + folder + "\\");
                 }
 
@@ -1057,6 +1080,90 @@ namespace MmootSetup
                 append("Fuse failed: " + error.Message);
                 return false;
             }
+            finally
+            {
+                if (unpacked != null) { try { Directory.Delete(unpacked, true); } catch { } }
+            }
+        }
+
+        // A zip that wraps everything in one folder is the normal shape; use that folder rather than its parent.
+        private static string SingleRoot(string dir)
+        {
+            try
+            {
+                string[] files = Directory.GetFiles(dir);
+                string[] dirs = Directory.GetDirectories(dir);
+                if (files.Length == 0 && dirs.Length == 1) return dirs[0];
+            }
+            catch { }
+            return dir;
+        }
+
+        // One file the other PC can pick: the executable, its DLLs, assets, shaders, mods and the content image.
+        public static string Pack(string gameDir, string imagePath, string zipPath, Action<string> append)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(gameDir) || !Directory.Exists(gameDir))
+                {
+                    append("Pack needs the game folder (build-ninja) built on this PC.");
+                    return null;
+                }
+                string exe = Path.Combine(gameDir, "Zelda64Recompiled-ootplay.exe");
+                if (!File.Exists(exe)) exe = Path.Combine(gameDir, "Zelda64Recompiled.exe");
+                if (!File.Exists(exe)) { append("No game executable in " + gameDir + "."); return null; }
+                foreach (string required in new string[] { "SDL2.dll", "dxcompiler.dll", "dxil.dll" })
+                    if (!File.Exists(Path.Combine(gameDir, required)))
+                    {
+                        append("That folder is incomplete: " + required + " is missing.");
+                        return null;
+                    }
+
+                string image = imagePath != null && File.Exists(imagePath) ? imagePath : FindImage(gameDir);
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(zipPath)));
+                using (FileStream stream = new FileStream(zipPath, FileMode.Create))
+                using (ZipArchive archive = new ZipArchive(stream, ZipArchiveMode.Create))
+                {
+                    // Only the game itself: build-ninja also holds every old smoke build, which must not travel.
+                    AddFile(archive, exe, "Zelda64Recompiled-ootplay.exe");
+                    foreach (string dll in new string[] { "SDL2.dll", "dxcompiler.dll", "dxil.dll" })
+                        AddFile(archive, Path.Combine(gameDir, dll), dll);
+                    foreach (string folder in new string[] { "assets", "shaders", "mods" })
+                    {
+                        string source = Path.Combine(gameDir, folder);
+                        if (!Directory.Exists(source)) continue;
+                        AddTree(archive, source, folder);
+                    }
+                    if (image != null) AddFile(archive, image, "mmoot.hyrule.opening.preview.1.z64");
+                }
+                FileInfo packed = new FileInfo(zipPath);
+                append("packed " + packed.Length.ToString("N0") + " bytes into " + zipPath);
+                append(image != null
+                    ? "included content image " + Path.GetFileName(image)
+                    : "no Hyrule image was included - pass its path as the third argument");
+                return zipPath;
+            }
+            catch (Exception error)
+            {
+                append("Pack failed: " + error.Message);
+                return null;
+            }
+        }
+
+        private static void AddTree(ZipArchive archive, string dir, string prefix)
+        {
+            foreach (string file in Directory.GetFiles(dir))
+                AddFile(archive, file, Path.Combine(prefix, Path.GetFileName(file)));
+            foreach (string sub in Directory.GetDirectories(dir))
+                AddTree(archive, sub, Path.Combine(prefix, Path.GetFileName(sub)));
+        }
+
+        private static void AddFile(ZipArchive archive, string path, string entryName)
+        {
+            ZipArchiveEntry entry = archive.CreateEntry(entryName.Replace('\\', '/'), CompressionLevel.Optimal);
+            using (Stream target = entry.Open())
+            using (FileStream source = File.OpenRead(path))
+                source.CopyTo(target);
         }
 
         private static void CopyRuntimeFiles(string fromDir, string toDir, Action<string> append)
@@ -1296,7 +1403,7 @@ namespace MmootSetup
             y += 38;
 
             Label gameLabel = new Label();
-            gameLabel.Text = "Game folder from the PC that built the game (Fuse copies the game from here; empty = build here)";
+            gameLabel.Text = "Game package from the PC that built the game (the .zip it packed; empty = build here)";
             gameLabel.SetBounds(16, y, 700, 18);
             body.Controls.Add(gameLabel);
             y += 20;
@@ -1307,11 +1414,12 @@ namespace MmootSetup
             browseGame.SetBounds(614, y - 1, 90, 26);
             browseGame.Click += delegate
             {
-                using (FolderBrowserDialog dialog = new FolderBrowserDialog())
+                using (OpenFileDialog dialog = new OpenFileDialog())
                 {
-                    dialog.Description = "Pick the build-ninja folder of the PC that compiled the game";
-                    dialog.SelectedPath = gameDir.Text;
-                    if (dialog.ShowDialog(this) == DialogResult.OK) gameDir.Text = dialog.SelectedPath;
+                    dialog.Title = "Pick the game package (MMOOT-game.zip) made on the PC that built the game";
+                    dialog.Filter = "MMOOT game package (*.zip)|*.zip|All files (*.*)|*.*";
+                    dialog.CheckFileExists = true;
+                    if (dialog.ShowDialog(this) == DialogResult.OK) gameDir.Text = dialog.FileName;
                 }
             };
             body.Controls.Add(browseGame);

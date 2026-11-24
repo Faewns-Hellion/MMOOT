@@ -45,6 +45,7 @@ $out = Join-Path $outDir $name
 
 & $csc /nologo /target:$target /platform:anycpu /optimize+ /warn:4 `
     /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll `
+    /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll `
     /out:$out $source
 if ($LASTEXITCODE -ne 0) { throw "csc failed with exit code $LASTEXITCODE" }
 

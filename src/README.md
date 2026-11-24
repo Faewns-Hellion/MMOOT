@@ -36,11 +36,11 @@ Nothing from the ROMs is bundled and the installer downloads nothing except, on 
    play and nothing is uploaded; `Yes - open a GitHub issue...` opens a prefilled draft you still submit yourself, and
    `No thanks - close` sends nothing.
 
-6. **Fuse, for a PC that cannot compile.** Picks the two ROMs plus a `build-ninja` folder copied from the PC that built
-   the game (with the newest `hyrule.z64` in it) and installs everything: ROMs, executable, runtime DLLs, `assets`,
+6. **Fuse, for a PC that cannot compile.** Picks the two ROMs plus the `MMOOT-game-<round>.zip` packed on the PC that built
+   the game (`--pack` writes it) and installs everything: ROMs, executable, runtime DLLs, `assets`,
    `shaders`, `mods` and the content image. `GamePackage.Install` copies the files, so nothing is downloaded and the
    machine needs no WSL, LLVM, CMake or .NET 8. `--fuse <game folder> <mm rom> <oot rom> [install folder]` does the
-   same from a console.
+   same from a console. `--pack <build folder> <output zip> [content image]` writes the package.
 
 ## Command line (for checking without clicking)
 
@@ -48,7 +48,8 @@ Nothing from the ROMs is bundled and the installer downloads nothing except, on 
     MMOOTSetup.exe --validate oot path\to\oot.z64
     MMOOTSetup.exe --check-updates
     MMOOTSetup.exe --report-check [folder]      # write the crash report, open nothing
-    MMOOTSetup.exe --fuse <game folder> <mm rom> <oot rom> [install folder]
+    MMOOTSetup.exe --fuse <game package.zip> <mm rom> <oot rom> [install folder]
+    MMOOTSetup.exe --pack <build folder> <output zip> [content image]
     MMOOTSetup.exe --install mm.z64 oot.z64 D:\MMOOT
     MMOOTSetup.exe --check-build "C:\Twilight Wind Mask of Time"     # prerequisites only
     MMOOTSetup.exe --build "C:\Twilight Wind Mask of Time" mm.z64 oot.z64   # recompile + install (the main button)
