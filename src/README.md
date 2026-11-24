@@ -22,7 +22,7 @@ Build the portable launcher with `powershell -NoProfile -File src/make_installer
    * `oot.n64.us.1.0.z64` - the OoT ROM the Hyrule image is built from.
    It also writes `mmoot_version.txt` (the installed version) and `mmoot_roms.txt` (which ROMs, when, verified).
 3. **Checks https://github.com/Faewns-Hellion/MMOOT for updates** through the GitHub API: latest release tag and its
-   first `.zip`/`.7z` asset, falling back to the newest tag when nothing is published yet. It reports "up to date",
+   first downloadable asset (a `.zip`/`.7z` when the release carries one, otherwise the first asset, usually `MMOOTSetup.exe`), falling back to the newest tag when nothing is published yet. It reports "up to date",
    "update available", or the reason the check failed (a private repository answers 404 without a token).
 4. **Content image policy.** A fresh install takes the newest `MMOOT/build/m3/*/hyrule.z64` and puts it in the game
    folder as `mmoot.hyrule.opening.preview.1.z64`. An existing image is never overwritten: the executable only accepts
@@ -45,6 +45,9 @@ The console build (`-Console`) prints results to its terminal. Both builds accep
 
     powershell -NoProfile -File src/make_installer.ps1            # build/installer/MMOOTSetup.exe
     powershell -NoProfile -File src/make_installer.ps1 -Console   # .../MMOOTSetup-console.exe
+
+Attach `build/installer/MMOOTSetup.exe` to the GitHub release for that round as `MMOOTSetup.exe`; the download
+link on the main page and the launcher's own update check both read the newest release.
 
 ## What it does not do
 

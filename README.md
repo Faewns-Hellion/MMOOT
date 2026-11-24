@@ -4,12 +4,13 @@ Ocarina of Time rebuilt inside Majora's Mask's own engine: OoT's scenes, actors,
 dialogue running on MM's renderer, inventory, timer and save system. Majora's Mask is slowly eating
 and absorbing Hyrule.
 
-This repository carries the MMOOT setup launcher and its source. The game itself is built from the
+This repository carries the MMOOT setup launcher's source; the launcher itself is published on the
+[Releases page](https://github.com/Faewns-Hellion/MMOOT/releases). The game itself is built from the
 project tree on your machine — nothing Nintendo ships here.
 
 ## The launcher
 
-Download **[MMOOTSetup.exe](https://github.com/Faewns-Hellion/MMOOT/raw/refs/heads/main/MMOOTSetup.exe)** and run it on **64-bit Windows 10 or Windows 11**. Use the download link, rather than saving the GitHub file-preview page as an EXE.
+Download **[MMOOTSetup.exe](https://github.com/Faewns-Hellion/MMOOT/releases/latest/download/MMOOTSetup.exe)** from the **[latest release](https://github.com/Faewns-Hellion/MMOOT/releases/latest)** and run it on **64-bit Windows 10 or Windows 11**. Use that link, rather than saving a GitHub file-preview page as an EXE.
 
 The portable launcher includes its .NET runtime. Copy the single EXE to the other PC; a separate .NET installation and the developer's original folder layout are not required to open it. This launcher is distinct from the game executable, which needs its runtime DLLs and assets alongside it.
 
@@ -55,7 +56,7 @@ launcher log instead of failing deep inside ninja.
     powershell -NoProfile -File src/make_installer.ps1
     powershell -NoProfile -File src/make_installer.ps1 -Console
 
-The default build uses the .NET 8 SDK and publishes a self-contained single EXE to `build/installer/`. `-Runtime win-arm64` and `-Runtime win-x86` build those architectures. `-Framework` explicitly selects the legacy .NET Framework compiler; that smaller EXE requires .NET Framework on the destination PC. Copy the tested portable output here as `MMOOTSetup.exe` to publish.
+The default build uses the .NET 8 SDK and publishes a self-contained single EXE to `build/installer/`. `-Runtime win-arm64` and `-Runtime win-x86` build those architectures. `-Framework` explicitly selects the legacy .NET Framework compiler; that smaller EXE requires .NET Framework on the destination PC. Attach the tested portable output to the GitHub release for the round (tag `16z66`, asset named `MMOOTSetup.exe`) to publish: the page's download link and the launcher's update check both read the newest release.
 
 ## Legal
 
