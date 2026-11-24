@@ -22,6 +22,13 @@ startup log - writes them to `%LOCALAPPDATA%\MMOOTSetupeports\MMOOT-report-<dat
 review. It is not telemetry: nothing is recorded while you play and nothing is uploaded. Only **Yes - open a GitHub issue...**
 leaves the PC, into a draft issue in your browser that still has to be submitted by hand; **No thanks - close** sends nothing.
 
+**Fuse (ROMs + game folder)** is the path for a PC that cannot compile the project. Pick the two ROMs, pick a
+`build-ninja` folder copied from the PC that built the game (with the newest `hyrule.z64` inside it), press **Fuse**,
+and it installs the ROMs, the executable, the runtime DLLs (`SDL2.dll`, `dxcompiler.dll`, `dxil.dll`), `assets`,
+`shaders`, `mods` and the content image. Nothing is downloaded and no compiler, WSL or LLVM is needed there. Leave the
+game folder empty and use **Build and configure** to compile on the machine the source tree lives on.
+
+
 **Build and configure** is the main button. It:
 
 1. Asks for your own **Majora's Mask (US)** and **Ocarina of Time (US)** ROMs and checks both before
@@ -43,6 +50,7 @@ compiled against.
 
     MMOOTSetup.exe --check-updates
     MMOOTSetup.exe --report-check [folder]   # write a crash report, open nothing
+    MMOOTSetup.exe --fuse <game folder> <mm rom> <oot rom> [install folder]
     MMOOTSetup.exe --validate mm  path\to\mm.z64
     MMOOTSetup.exe --validate oot path\to\oot.z64
     MMOOTSetup.exe --install mm.z64 oot.z64 D:\MMOOT

@@ -40,7 +40,7 @@ namespace MmootSetup
         public const string LatestReleaseApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/releases/latest";
         public const string TagsApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/tags";
         public const string IssuesUrl = RepoUrl + "/issues/new";
-        public const string InstallerVersion = "16z67";
+        public const string InstallerVersion = "16z68";
 
         [STAThread]
         private static int Main(string[] args)
@@ -90,6 +90,17 @@ namespace MmootSetup
                 UpdateInfo info = GithubCheck.Latest();
                 Console.WriteLine(info.Describe(InstalledVersion()));
                 return info.Ok ? 0 : 1;
+            }
+
+            // Installs a game that was built on another PC, for checking without clicking:
+            //   MMOOTSetup.exe --fuse <game folder> <mm rom> <oot rom> [install folder]
+            if (args.Length >= 4 && args[0] == "--fuse")
+            {
+                string target = args.Length >= 5 ? args[4] : Program.DefaultInstallDir;
+                bool fused = Installer.Run(args[2], args[3], target, Console.WriteLine);
+                if (fused) fused = GamePackage.Install(args[1], target, Console.WriteLine);
+                Console.WriteLine(fused ? "FUSE OK" : "FUSE FAILED");
+                return fused ? 0 : 1;
             }
 
             // Builds a crash report exactly as the button would, writes it, and prints the draft issue URL length.
@@ -972,6 +983,143 @@ namespace MmootSetup
         }
     }
 
+    // Installs a game that was built on another PC. A machine without WSL, LLVM and CMake cannot compile the
+    // project, so Fuse copies the finished game instead: the executable, its runtime DLLs, the assets and the Hyrule
+    // content image, on top of the two ROMs. Nothing is downloaded and nothing Nintendo-made comes from here - the
+    // files come from the player's own build folder.
+    internal static class GamePackage
+    {
+        public static bool Install(string fromDir, string gameFolder, Action<string> append)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(fromDir) || !Directory.Exists(fromDir))
+                {
+                    append("Fuse needs the game folder built on the other PC (pick it above), or use Build and configure here.");
+                    return false;
+                }
+                string exe = Path.Combine(fromDir, "Zelda64Recompiled-ootplay.exe");
+                if (!File.Exists(exe)) exe = Path.Combine(fromDir, "Zelda64Recompiled.exe");
+                if (!File.Exists(exe))
+                {
+                    append("No Zelda64Recompiled-ootplay.exe in " + fromDir + " - point Fuse at the build-ninja folder of the " +
+                           "PC that compiled the game.");
+                    return false;
+                }
+                if (string.IsNullOrEmpty(gameFolder))
+                {
+                    append("Pick an install folder.");
+                    return false;
+                }
+
+                Directory.CreateDirectory(gameFolder);
+                CopyRuntimeFiles(fromDir, gameFolder, append);
+
+                string play = Path.Combine(gameFolder, "Zelda64Recompiled-ootplay.exe");
+                if (File.Exists(play))
+                {
+                    string backup = play + ".pre_fuse_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".bak";
+                    File.Copy(play, backup, true);
+                    append("previous game kept as " + Path.GetFileName(backup));
+                }
+                File.Copy(exe, play, true);
+                append("installed " + play + " (" + new FileInfo(play).Length.ToString("N0") + " bytes)");
+
+                foreach (string folder in new string[] { "assets", "shaders", "mods" })
+                {
+                    string source = Path.Combine(fromDir, folder);
+                    if (!Directory.Exists(source)) continue;
+                    CopyTree(source, Path.Combine(gameFolder, folder));
+                    append("copied " + folder + "\\");
+                }
+
+                string image = FindImage(fromDir);
+                string destination = Path.Combine(gameFolder, "mmoot.hyrule.opening.preview.1.z64");
+                if (image == null)
+                {
+                    append("no Hyrule content image in that folder; if the game asks for one, copy the hyrule.z64 built on that " +
+                           "PC into " + gameFolder + " as " + Path.GetFileName(destination));
+                }
+                else if (File.Exists(destination))
+                {
+                    append("keeping the content image already installed (" +
+                           new FileInfo(destination).Length.ToString("N0") + " bytes)");
+                }
+                else
+                {
+                    File.Copy(image, destination, true);
+                    append("installed content image from " + Path.GetFileName(image));
+                }
+                return true;
+            }
+            catch (Exception error)
+            {
+                append("Fuse failed: " + error.Message);
+                return false;
+            }
+        }
+
+        private static void CopyRuntimeFiles(string fromDir, string toDir, Action<string> append)
+        {
+            foreach (string required in new string[] { "SDL2.dll", "dxcompiler.dll", "dxil.dll" })
+                if (!File.Exists(Path.Combine(fromDir, required)))
+                    throw new FileNotFoundException("That game folder is incomplete: " + required + " is missing.", required);
+            int copied = 0;
+            foreach (string dll in Directory.GetFiles(fromDir, "*.dll"))
+            {
+                File.Copy(dll, Path.Combine(toDir, Path.GetFileName(dll)), true);
+                copied++;
+            }
+            append("installed " + copied + " runtime DLLs");
+        }
+
+        private static void CopyTree(string fromDir, string toDir)
+        {
+            Directory.CreateDirectory(toDir);
+            foreach (string file in Directory.GetFiles(fromDir))
+                File.Copy(file, Path.Combine(toDir, Path.GetFileName(file)), true);
+            foreach (string dir in Directory.GetDirectories(fromDir))
+                CopyTree(dir, Path.Combine(toDir, Path.GetFileName(dir)));
+        }
+
+        // The content image sits beside the executable when the build was packaged, or under build\m3\<tag> in a full tree.
+        private static string FindImage(string fromDir)
+        {
+            string[] patterns = { "mmoot.hyrule*.z64", "hyrule*.z64" };
+            foreach (string pattern in patterns)
+            {
+                string[] top = Directory.GetFiles(fromDir, pattern);
+                if (top.Length != 0) return Newest(top);
+            }
+            try
+            {
+                string m3 = Path.Combine(fromDir, "build", "m3");
+                if (Directory.Exists(m3))
+                {
+                    foreach (string pattern in patterns)
+                    {
+                        string[] found = Directory.GetFiles(m3, pattern, SearchOption.AllDirectories);
+                        if (found.Length != 0) return Newest(found);
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static string Newest(string[] files)
+        {
+            string best = files[0];
+            DateTime bestTime = File.GetLastWriteTimeUtc(best);
+            foreach (string file in files)
+            {
+                DateTime time = File.GetLastWriteTimeUtc(file);
+                if (time > bestTime) { best = file; bestTime = time; }
+            }
+            return best;
+        }
+    }
+
     // The install itself, shared by the window and by `MMOOTSetup.exe --install <mm> <oot> <folder>` so it can be
     // run and checked without clicking.
     internal static class Installer
@@ -1061,6 +1209,7 @@ namespace MmootSetup
         private readonly Button installButton = new Button();
         private readonly Button updateButton = new Button();
         private readonly Button openRelease = new Button();
+        private readonly TextBox gameDir = new TextBox();
         private UpdateInfo lastUpdate;
         private string lastUpdateHref;
 
@@ -1146,24 +1295,53 @@ namespace MmootSetup
             body.Controls.Add(browseDir);
             y += 38;
 
-            installButton.Text = "Build and configure";
-            installButton.SetBounds(16, y, 160, 32);
-            installButton.Click += delegate { BuildAll(); };
+            Label gameLabel = new Label();
+            gameLabel.Text = "Game folder from the PC that built the game (Fuse copies the game from here; empty = build here)";
+            gameLabel.SetBounds(16, y, 700, 18);
+            body.Controls.Add(gameLabel);
+            y += 20;
+            gameDir.SetBounds(16, y, 590, 24);
+            body.Controls.Add(gameDir);
+            Button browseGame = new Button();
+            browseGame.Text = "Browse...";
+            browseGame.SetBounds(614, y - 1, 90, 26);
+            browseGame.Click += delegate
+            {
+                using (FolderBrowserDialog dialog = new FolderBrowserDialog())
+                {
+                    dialog.Description = "Pick the build-ninja folder of the PC that compiled the game";
+                    dialog.SelectedPath = gameDir.Text;
+                    if (dialog.ShowDialog(this) == DialogResult.OK) gameDir.Text = dialog.SelectedPath;
+                }
+            };
+            body.Controls.Add(browseGame);
+            y += 38;
+
+            installButton.Text = "Fuse (ROMs + game folder)";
+            installButton.SetBounds(16, y, 210, 32);
+            installButton.Click += delegate { Fuse(); };
             body.Controls.Add(installButton);
+
+            Button buildButton = new Button();
+            buildButton.Text = "Build and configure";
+            buildButton.SetBounds(236, y, 160, 32);
+            buildButton.Click += delegate { BuildAll(); };
+            body.Controls.Add(buildButton);
 
             Button romsOnly = new Button();
             romsOnly.Text = "ROMs only";
-            romsOnly.SetBounds(186, y, 100, 32);
+            romsOnly.SetBounds(406, y, 100, 32);
             romsOnly.Click += delegate { Install(); };
             body.Controls.Add(romsOnly);
 
             updateButton.Text = "Check for updates";
-            updateButton.SetBounds(296, y, 150, 32);
+            updateButton.SetBounds(516, y, 150, 32);
             updateButton.Click += delegate { CheckUpdates(true); };
             body.Controls.Add(updateButton);
+            y += 38;
 
             openRelease.Text = "Open release page";
-            openRelease.SetBounds(456, y, 150, 32);
+            openRelease.SetBounds(16, y, 150, 32);
             openRelease.Enabled = false;
             openRelease.Click += delegate
             {
@@ -1267,8 +1445,8 @@ namespace MmootSetup
 
         private void UpdateInstallEnabled()
         {
-            installButton.Enabled = RomCheck.Check(mmPath.Text.Trim(), RomKind.MajorasMask).Ok &&
-                                    RomCheck.Check(ootPath.Text.Trim(), RomKind.Ocarina).Ok;
+            // Fuse validates on click and says what is wrong, so it stays available even before both ROMs are picked.
+            installButton.Enabled = true;
         }
 
         // A previous install leaves both ROMs in the folder; pick them up so an update does not ask again.
@@ -1292,6 +1470,23 @@ namespace MmootSetup
                 UpdateInstallEnabled();
             }
             catch { }
+        }
+
+        // Fuse: the two ROMs plus a game built on another PC. This is the path for a machine that cannot compile the
+        // project, so nothing here needs WSL, LLVM, CMake or the source tree.
+        private void Fuse()
+        {
+            installButton.Enabled = false;
+            try
+            {
+                string dir = installDir.Text.Trim();
+                Append("--- fusing ---");
+                if (!Installer.Run(mmPath.Text.Trim(), ootPath.Text.Trim(), dir, Append)) return;
+                if (!GamePackage.Install(gameDir.Text.Trim(), dir, Append)) return;
+                Append("done: the game is installed for these ROMs - start it with pc\\play_hyrule.cmd");
+                CheckUpdates(false);
+            }
+            finally { installButton.Enabled = true; }
         }
 
         private void Install()
