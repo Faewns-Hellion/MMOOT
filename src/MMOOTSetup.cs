@@ -41,7 +41,7 @@ namespace MmootSetup
         public const string LatestReleaseApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/releases/latest";
         public const string TagsApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/tags";
         public const string IssuesUrl = RepoUrl + "/issues/new";
-        public const string InstallerVersion = "16z70";
+        public const string InstallerVersion = "16z71";
 
         [STAThread]
         private static int Main(string[] args)
@@ -1591,7 +1591,8 @@ namespace MmootSetup
                 Append("--- fusing ---");
                 if (!Installer.Run(mmPath.Text.Trim(), ootPath.Text.Trim(), dir, Append)) return;
                 if (!GamePackage.Install(gameDir.Text.Trim(), dir, Append)) return;
-                Append("done: the game is installed for these ROMs - start it with pc\\play_hyrule.cmd");
+                Append("done: the game is installed for these ROMs - start Zelda64Recompiled-ootplay.exe in that " +
+                        "folder; with the Hyrule content image installed it starts in Hyrule");
                 CheckUpdates(false);
             }
             finally { installButton.Enabled = true; }
