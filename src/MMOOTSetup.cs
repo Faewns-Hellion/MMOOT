@@ -41,7 +41,7 @@ namespace MmootSetup
         public const string LatestReleaseApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/releases/latest";
         public const string TagsApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/tags";
         public const string IssuesUrl = RepoUrl + "/issues/new";
-        public const string InstallerVersion = "16z74";
+        public const string InstallerVersion = "16z87";
 
         [STAThread]
         private static int Main(string[] args)
