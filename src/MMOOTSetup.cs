@@ -41,7 +41,7 @@ namespace MmootSetup
         public const string LatestReleaseApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/releases/latest";
         public const string TagsApi = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/tags";
         public const string IssuesUrl = RepoUrl + "/issues/new";
-        public const string InstallerVersion = "16z97";
+        public const string InstallerVersion = "17a01";
 
         [STAThread]
         private static int Main(string[] args)
@@ -1303,6 +1303,121 @@ namespace MmootSetup
         }
     }
 
+    // 17a01 launcher look: OoT gold/green + MM purple/moon orange.
+    internal static class Theme
+    {
+        public static readonly Color Night = Color.FromArgb(18, 16, 28);
+        public static readonly Color Field = Color.FromArgb(30, 26, 44);
+        public static readonly Color Gold = Color.FromArgb(214, 178, 88);
+        public static readonly Color Purple = Color.FromArgb(150, 96, 200);
+
+        public static void Apply(Control root)
+        {
+            foreach (Control c in root.Controls)
+            {
+                Button b = c as Button;
+                if (b != null)
+                {
+                    b.FlatStyle = FlatStyle.Flat;
+                    b.FlatAppearance.BorderColor = Gold;
+                    b.FlatAppearance.BorderSize = 1;
+                    b.FlatAppearance.MouseOverBackColor = Color.FromArgb(70, 44, 96);
+                    b.FlatAppearance.MouseDownBackColor = Color.FromArgb(96, 60, 130);
+                    b.BackColor = Field;
+                    b.ForeColor = Color.FromArgb(240, 226, 190);
+                    b.Cursor = Cursors.Hand;
+                }
+                TextBox t = c as TextBox;
+                if (t != null)
+                {
+                    t.BorderStyle = BorderStyle.FixedSingle;
+                    t.BackColor = Field;
+                    t.ForeColor = Color.FromArgb(236, 230, 214);
+                }
+                if (c.HasChildren) Apply(c);
+            }
+        }
+    }
+
+    internal sealed class BannerPanel : Panel
+    {
+        public BannerPanel()
+        {
+            DoubleBuffered = true;
+            ResizeRedraw = true;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            Rectangle r = ClientRectangle;
+            using (var bg = new System.Drawing.Drawing2D.LinearGradientBrush(r, Color.FromArgb(24, 70, 44),
+                       Color.FromArgb(70, 28, 96), 0f))
+            {
+                var blend = new System.Drawing.Drawing2D.ColorBlend();
+                blend.Colors = new[] { Color.FromArgb(22, 72, 44), Color.FromArgb(30, 40, 52), Color.FromArgb(76, 28, 100) };
+                blend.Positions = new[] { 0f, 0.5f, 1f };
+                bg.InterpolationColors = blend;
+                g.FillRectangle(bg, r);
+            }
+            // Triforce (OoT)
+            float s = 46f, tx = 22f, ty = (r.Height - s * 0.866f) / 2f;
+            using (var gold = new SolidBrush(Theme.Gold))
+            {
+                DrawTri(g, gold, tx + s / 4f, ty, s / 2f);
+                DrawTri(g, gold, tx, ty + s * 0.433f, s / 2f);
+                DrawTri(g, gold, tx + s / 2f, ty + s * 0.433f, s / 2f);
+            }
+            // Clock face with the moon (MM)
+            float cx = r.Width - 58f, cy = r.Height / 2f, cr = 36f;
+            using (var ring = new Pen(Color.FromArgb(200, 214, 178, 88), 2f))
+            {
+                g.DrawEllipse(ring, cx - cr, cy - cr, cr * 2, cr * 2);
+                for (int i = 0; i < 12; i++)
+                {
+                    double a = i * Math.PI / 6;
+                    g.DrawLine(ring, cx + (float)Math.Cos(a) * (cr - 6), cy + (float)Math.Sin(a) * (cr - 6),
+                               cx + (float)Math.Cos(a) * cr, cy + (float)Math.Sin(a) * cr);
+                }
+            }
+            using (var glow = new SolidBrush(Color.FromArgb(70, 255, 140, 60)))
+                g.FillEllipse(glow, cx - 26, cy - 26, 52, 52);
+            using (var moon = new SolidBrush(Color.FromArgb(232, 170, 96)))
+                g.FillEllipse(moon, cx - 20, cy - 20, 40, 40);
+            using (var eye = new SolidBrush(Color.FromArgb(120, 50, 30)))
+            {
+                g.FillEllipse(eye, cx - 11, cy - 7, 7, 7);
+                g.FillEllipse(eye, cx + 4, cy - 7, 7, 7);
+                g.FillRectangle(eye, cx - 8, cy + 6, 16, 2);
+            }
+            // Title
+            using (var titleFont = new Font("Georgia", 22f, FontStyle.Bold))
+            using (var subFont = new Font("Segoe UI", 9.5f, FontStyle.Italic))
+            using (var shadow = new SolidBrush(Color.FromArgb(160, 0, 0, 0)))
+            using (var gold = new SolidBrush(Color.FromArgb(240, 206, 120)))
+            using (var sub = new SolidBrush(Color.FromArgb(220, 206, 236)))
+            {
+                string title = "The Legend of Zelda: Masks of Time";
+                SizeF ts = g.MeasureString(title, titleFont);
+                float x = (r.Width - ts.Width) / 2f, yy = 18f;
+                g.DrawString(title, titleFont, shadow, x + 2, yy + 2);
+                g.DrawString(title, titleFont, gold, x, yy);
+                string line = "Ocarina of Time  •  Majora's Mask";
+                SizeF ss = g.MeasureString(line, subFont);
+                g.DrawString(line, subFont, sub, (r.Width - ss.Width) / 2f, yy + ts.Height + 2);
+            }
+            using (var edge = new Pen(Theme.Gold, 1f))
+                g.DrawRectangle(edge, 0, 0, r.Width - 1, r.Height - 1);
+        }
+
+        private static void DrawTri(Graphics g, Brush b, float x, float y, float w)
+        {
+            float h = w * 0.866f;
+            g.FillPolygon(b, new[] { new PointF(x + w / 2f, y), new PointF(x + w, y + h), new PointF(x, y + h) });
+        }
+    }
+
     internal sealed class SetupForm : Form
     {
         private readonly TextBox mmPath = new TextBox();
@@ -1328,8 +1443,9 @@ namespace MmootSetup
             MinimumSize = new Size(680, 580);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9f);
-            BackColor = Color.FromArgb(24, 22, 30);
-            ForeColor = Color.Gainsboro;
+            BackColor = Theme.Night;
+            ForeColor = Color.FromArgb(232, 226, 210);
+            Height = 700;
 
             Panel body = new Panel();
             body.Dock = DockStyle.Fill;
@@ -1338,14 +1454,14 @@ namespace MmootSetup
             body.BackColor = BackColor;
             Controls.Add(body);
 
-            int y = 12;
-            Label title = new Label();
-            title.Text = "LoZ: Masks of Time";
-            title.Font = new Font("Segoe UI Semibold", 15f);
-            title.ForeColor = Color.FromArgb(214, 170, 255);
-            title.SetBounds(16, y, 640, 30);
-            body.Controls.Add(title);
-            y += 34;
+            // 17a01: banner in both games' colours: Kokiri green + Triforce gold (OoT) fading into Majora purple
+            // with the falling moon over a clock face (MM).
+            int y = 8;
+            Panel banner = new BannerPanel();
+            banner.SetBounds(16, y, 700, 104);
+            banner.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            body.Controls.Add(banner);
+            y += 116;
 
             Label blurb = new Label();
             blurb.Text = "Majora's Mask slowly eating and absorbing Hyrule. Pick the two Nintendo 64 ROMs from files you own;\n" +
@@ -1489,6 +1605,9 @@ namespace MmootSetup
             log.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
             body.Controls.Add(log);
 
+            Theme.Apply(body);
+            installButton.BackColor = Theme.Gold;
+            installButton.ForeColor = Color.FromArgb(28, 20, 8);
             Append("Installer " + Program.InstallerVersion + ". Game folder: " + Program.DefaultInstallDir);
             Append("Updates come from " + Program.RepoUrl);
             Shown += delegate
